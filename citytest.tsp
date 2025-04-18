@@ -1,0 +1,18 @@
+NAME : citytest
+TYPE : TSP
+COMMENT : 10-city problem with lower diag row distance matrix
+DIMENSION : 10
+EDGE_WEIGHT_TYPE : EXPLICIT
+EDGE_WEIGHT_FORMAT : LOWER_DIAG_ROW
+EDGE_WEIGHT_SECTION
+0
+2 0
+3 4 0
+6 5 8 0
+9 7 4 6 0
+3 8 6 9 7 0
+5 6 4 8 2 3 0
+7 9 3 6 1 4 5 0
+8 3 5 4 6 2 7 3 0
+4 2 6 5 3 7 4 6 2 0
+EOF
