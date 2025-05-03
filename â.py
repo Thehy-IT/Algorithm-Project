@@ -562,6 +562,6 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         file_path = sys.argv[1]
     else:
-        file_path = "gr20_derived.tsp"  # Mặc định
+        file_path = "city.tsp"  # Mặc định
     
     run_tsp_solver(file_path)
