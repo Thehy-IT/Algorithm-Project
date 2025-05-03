@@ -456,7 +456,7 @@ def visualize_results(results: List[Tuple[str, float, float, float]]):
     ax2.legend(loc='upper right')
     
     plt.tight_layout()
-    plt.savefig('tsp_algorithm_comparison.png')
+    plt.savefig('100.png')# thay đổi tên của từng dữ liệu để quản lý dễ hơn nha
     plt.close()
 
 def run_tsp_solver(file_path: str):
@@ -554,7 +554,7 @@ def run_tsp_solver(file_path: str):
     if results:
         print("\nTạo biểu đồ so sánh hiệu suất...")
         visualize_results(results)
-        print("Đã lưu biểu đồ vào file 'tsp_algorithm_comparison.png'")
+        print("Đã lưu biểu đồ vào file 'test.png'")
     
     print("\nHoàn thành!")
 
@@ -562,6 +562,6 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         file_path = sys.argv[1]
     else:
-        file_path = "city.tsp"  # Mặc định
+        file_path = "100.tsp"  # Thay đổi tên file TSP tại đây để lấy kết quả nha
     
     run_tsp_solver(file_path)
