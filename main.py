@@ -456,7 +456,7 @@ def visualize_results(results: List[Tuple[str, float, float, float]]):
     ax2.legend(loc='upper right')
     
     plt.tight_layout()
-    plt.savefig('500.png')# thay đổi tên của từng dữ liệu để quản lý dễ hơn nha
+    plt.savefig('300.png')# thay đổi tên của từng dữ liệu để quản lý dễ hơn nha
     plt.close()
 
 def run_tsp_solver(file_path: str):
@@ -562,6 +562,6 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         file_path = sys.argv[1]
     else:
-        file_path = "500.tsp"  # Thay đổi tên file TSP tại đây để lấy kết quả nha
+        file_path = "300.tsp"  # Thay đổi tên file TSP tại đây để lấy kết quả nha
     
     run_tsp_solver(file_path)
