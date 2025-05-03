@@ -1,759 +1,619 @@
 import numpy as np
 import time
 import matplotlib.pyplot as plt
-import pandas as pd
-import heapq
-import random
-import sys
 import psutil
-import os
-from itertools import permutations
+import random
+import itertools
+import copy
+from typing import List, Tuple
+
 
 class TSPSolver:
-    def __init__(self, distance_matrix, cities=None):
-        """
-        Khởi tạo bài toán TSP
-        
-        Parameters:
-        - distance_matrix: Ma trận khoảng cách giữa các thành phố
-        - cities: Danh sách tên các thành phố (nếu có)
-        """
+    def __init__(self, distance_matrix, city_count):
         self.distance_matrix = distance_matrix
-        self.num_cities = len(distance_matrix)
-        
-        if cities is None:
-            self.cities = [str(i) for i in range(self.num_cities)]
-        else:
-            self.cities = cities
-            
-        self.results = {}
+        self.city_count = city_count
+        self.city_names = [str(i) for i in range(city_count)]
         
     def read_tsp_file(file_path):
-        """
-        Đọc file TSP từ đường dẫn
+        """Đọc file TSP và trả về ma trận khoảng cách"""
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
+            
+        # Tìm số thành phố
+        dimension_line = [line for line in lines if line.strip().startswith("DIMENSION")][0]
+        city_count = int(dimension_line.split(":")[1].strip())
         
-        Parameters:
-        - file_path: Đường dẫn đến file TSP
+        # Tìm vị trí bắt đầu của ma trận khoảng cách
+        start_idx = lines.index("EDGE_WEIGHT_SECTION\n") + 1
         
-        Returns:
-        - Một đối tượng TSPSolver với ma trận khoảng cách đã đọc
-        """
-        try:
-            with open(file_path, 'r') as file:
-                lines = file.readlines()
+        # Đọc ma trận khoảng cách dạng LOWER_DIAG_ROW
+        dist_matrix = np.zeros((city_count, city_count))
+        row_idx = 0
+        col_idx = 0
+        
+        for line in lines[start_idx:]:
+            if line.strip() == "EOF":
+                break
                 
-            # Tìm các thông tin cần thiết từ file
-            dimension = None
-            edge_weight_section = False
-            distance_matrix = None
-            city_names = None
-            
-            for i, line in enumerate(lines):
-                line = line.strip()
-                
-                if line.startswith("DIMENSION"):
-                    dimension = int(line.split(":")[1].strip())
-                    
-                if line.startswith("EDGE_WEIGHT_SECTION") or line == "EDGE_WEIGHT_SECTION":
-                    edge_weight_section = True
-                    distance_matrix = np.zeros((dimension, dimension))
-                    start_line = i + 1
-                    break
-            
-            # Đọc ma trận khoảng cách
-            if edge_weight_section:
-                row = 0
-                col = 0
-                
-                for i in range(start_line, len(lines)):
-                    if lines[i].strip() == "EOF":
-                        break
-                    
-                    values = lines[i].strip().split()
-                    for val in values:
-                        if val.strip():  # Skip empty values
-                            distance_matrix[row][col] = float(val)
-                            col += 1
-                            if col == dimension:
-                                col = 0
-                                row += 1
-                                if row == dimension:
-                                    break
-            
-            return TSPSolver(distance_matrix)
-        except Exception as e:
-            print(f"Lỗi khi đọc file TSP: {e}")
-            return None
+            values = [int(val) for val in line.strip().split()]
+            for val in values:
+                dist_matrix[row_idx][col_idx] = val
+                dist_matrix[col_idx][row_idx] = val  # Đối xứng
+                col_idx += 1
+                if col_idx > row_idx:
+                    row_idx += 1
+                    col_idx = 0
+        
+        return dist_matrix, city_count
     
-    def _calculate_memory_usage(self):
-        """Tính toán dung lượng bộ nhớ sử dụng"""
-        process = psutil.Process(os.getpid())
-        return process.memory_info().rss / 1024 / 1024  # Trả về MB
-    
-    def greedy_algorithm(self, start_city=0):
-        """
-        Thuật toán tham lam (Greedy Algorithm)
-        
-        Parameters:
-        - start_city: Thành phố bắt đầu
-        
-        Returns:
-        - path: Lộ trình thành phố
-        - total_distance: Tổng khoảng cách
-        - execution_time: Thời gian thực thi
-        - memory_usage: Bộ nhớ sử dụng
-        """
-        start_memory = self._calculate_memory_usage()
-        start_time = time.time()
-        
-        unvisited = set(range(self.num_cities))
-        path = [start_city]
-        unvisited.remove(start_city)
-        total_distance = 0
-        
-        current_city = start_city
-        
-        while unvisited:
-            # Tìm thành phố gần nhất chưa thăm
-            nearest_city = min(unvisited, key=lambda city: self.distance_matrix[current_city][city])
-            total_distance += self.distance_matrix[current_city][nearest_city]
-            current_city = nearest_city
-            path.append(current_city)
-            unvisited.remove(current_city)
-        
-        # Quay về thành phố ban đầu
-        total_distance += self.distance_matrix[current_city][start_city]
-        path.append(start_city)
-        
-        end_time = time.time()
-        end_memory = self._calculate_memory_usage()
-        
-        execution_time = end_time - start_time
-        memory_usage = end_memory - start_memory
-        
-        # Chuyển đổi path thành tên thành phố
-        city_path = [self.cities[i] for i in path]
-        
-        self.results["Greedy"] = {
-            "path": city_path,
-            "total_distance": total_distance,
-            "execution_time": execution_time,
-            "memory_usage": memory_usage
-        }
-        
-        # Lưu kết quả
-        with open("tsp_results.txt", "a") as f:
-            f.write(f"Greedy Algorithm: {city_path}\n")
-            f.write(f"Tổng khoảng cách: {total_distance}\n")
-            f.write(f"Thời gian thực thi: {execution_time} giây\n")
-            f.write(f"Bộ nhớ sử dụng: {memory_usage} MB\n\n")
-        
-        return city_path, total_distance, execution_time, memory_usage
-    
-    def brute_force(self, start_city=0, max_cities=10):
-        """
-        Thuật toán vét cạn (Brute Force)
-        
-        Parameters:
-        - start_city: Thành phố bắt đầu
-        - max_cities: Số thành phố tối đa để chạy thuật toán
-        
-        Returns:
-        - path: Lộ trình thành phố
-        - total_distance: Tổng khoảng cách
-        - execution_time: Thời gian thực thi
-        - memory_usage: Bộ nhớ sử dụng
-        """
-        if self.num_cities > max_cities:
-            print(f"Bỏ qua thuật toán Brute Force vì số thành phố ({self.num_cities}) > {max_cities}")
-            self.results["Brute Force"] = {
-                "path": None,
-                "total_distance": float('inf'),
-                "execution_time": float('inf'),
-                "memory_usage": float('inf')
-            }
-            return None, float('inf'), float('inf'), float('inf')
-        
-        start_memory = self._calculate_memory_usage()
-        start_time = time.time()
-        
-        # Tạo tất cả các hoán vị của các thành phố (trừ thành phố xuất phát)
-        cities = list(range(self.num_cities))
-        cities.remove(start_city)
-        
-        best_path = None
-        best_distance = float('inf')
-        
-        for perm in permutations(cities):
-            # Thêm thành phố xuất phát vào đầu và cuối
-            current_path = [start_city] + list(perm) + [start_city]
-            
-            # Tính tổng khoảng cách
-            current_distance = 0
-            for i in range(len(current_path) - 1):
-                current_distance += self.distance_matrix[current_path[i]][current_path[i+1]]
-            
-            # Cập nhật nếu tìm thấy lộ trình tốt hơn
-            if current_distance < best_distance:
-                best_distance = current_distance
-                best_path = current_path
-        
-        end_time = time.time()
-        end_memory = self._calculate_memory_usage()
-        
-        execution_time = end_time - start_time
-        memory_usage = end_memory - start_memory
-        
-        # Chuyển đổi path thành tên thành phố
-        city_path = [self.cities[i] for i in best_path]
-        
-        self.results["Brute Force"] = {
-            "path": city_path,
-            "total_distance": best_distance,
-            "execution_time": execution_time,
-            "memory_usage": memory_usage
-        }
-        
-        return city_path, best_distance, execution_time, memory_usage
-    
-    def approximation_algorithm(self, start_city=0):
-        """
-        Thuật toán xấp xỉ (MST-based Approximation Algorithm)
-        
-        Parameters:
-        - start_city: Thành phố bắt đầu
-        
-        Returns:
-        - path: Lộ trình thành phố
-        - total_distance: Tổng khoảng cách
-        - execution_time: Thời gian thực thi
-        - memory_usage: Bộ nhớ sử dụng
-        """
-        start_memory = self._calculate_memory_usage()
-        start_time = time.time()
-        
-        # Xây dựng MST (Minimum Spanning Tree) bằng thuật toán Prim
-        mst = []
-        visited = [False] * self.num_cities
-        visited[start_city] = True
-        
-        # Thực hiện n-1 lần để thêm n-1 cạnh vào MST
-        for _ in range(self.num_cities - 1):
-            min_edge = (float('inf'), -1, -1)  # (weight, u, v)
-            
-            for u in range(self.num_cities):
-                if visited[u]:
-                    for v in range(self.num_cities):
-                        if not visited[v] and self.distance_matrix[u][v] < min_edge[0]:
-                            min_edge = (self.distance_matrix[u][v], u, v)
-            
-            _, u, v = min_edge
-            mst.append((u, v))
-            visited[v] = True
-        
-        # Xây dựng đồ thị từ MST
-        graph = [[] for _ in range(self.num_cities)]
-        for u, v in mst:
-            graph[u].append(v)
-            graph[v].append(u)
-        
-        # DFS để tạo đường đi
-        path = []
-        visited = [False] * self.num_cities
-        
-        def dfs(node):
-            visited[node] = True
-            path.append(node)
-            for neighbor in graph[node]:
-                if not visited[neighbor]:
-                    dfs(neighbor)
-        
-        dfs(start_city)
-        
-        # Thêm thành phố đầu tiên để tạo chu trình
-        path.append(start_city)
-        
-        # Tính tổng khoảng cách
+    def calculate_path_distance(self, path):
+        """Tính tổng khoảng cách của một lộ trình"""
         total_distance = 0
         for i in range(len(path) - 1):
             total_distance += self.distance_matrix[path[i]][path[i+1]]
         
-        end_time = time.time()
-        end_memory = self._calculate_memory_usage()
+        # Thêm khoảng cách từ thành phố cuối về thành phố đầu
+        total_distance += self.distance_matrix[path[-1]][path[0]]
+        return total_distance
         
-        execution_time = end_time - start_time
-        memory_usage = end_memory - start_memory
+    def greedy_algorithm(self):
+        """Thuật toán tham lam"""
+        start_time = time.time()
+        memory_before = psutil.Process().memory_info().rss / 1024 / 1024  # MB
         
-        # Chuyển đổi path thành tên thành phố
-        city_path = [self.cities[i] for i in path]
+        # Bắt đầu từ thành phố 0
+        current_city = 0
+        tour = [current_city]
+        unvisited = set(range(1, self.city_count))
         
-        self.results["Approximation"] = {
-            "path": city_path,
-            "total_distance": total_distance,
+        while unvisited:
+            # Tìm thành phố gần nhất chưa thăm
+            next_city = min(unvisited, key=lambda city: self.distance_matrix[current_city][city])
+            tour.append(next_city)
+            unvisited.remove(next_city)
+            current_city = next_city
+            
+        execution_time = time.time() - start_time
+        memory_used = psutil.Process().memory_info().rss / 1024 / 1024 - memory_before
+        
+        distance = self.calculate_path_distance(tour)
+        return {
+            "algorithm": "Greedy",
+            "path": tour,
+            "distance": distance,
             "execution_time": execution_time,
-            "memory_usage": memory_usage
+            "memory_used": memory_used
         }
         
-        return city_path, total_distance, execution_time, memory_usage
-    
-    def ant_colony_optimization(self, start_city=0, n_ants=10, n_iterations=100, 
-                           alpha=1.0, beta=2.0, evaporation_rate=0.5, Q=100, max_cities=50):
-        """
-        Thuật toán bầy kiến (Ant Colony Optimization)
-        
-        Parameters:
-        - start_city: Thành phố bắt đầu
-        - n_ants: Số lượng kiến
-        - n_iterations: Số lần lặp
-        - alpha: Hệ số ảnh hưởng của pheromone
-        - beta: Hệ số ảnh hưởng của khoảng cách
-        - evaporation_rate: Tỷ lệ bay hơi pheromone
-        - Q: Hằng số lượng pheromone
-        - max_cities: Số thành phố tối đa để chạy thuật toán
-        
-        Returns:
-        - path: Lộ trình thành phố
-        - total_distance: Tổng khoảng cách
-        - execution_time: Thời gian thực thi
-        - memory_usage: Bộ nhớ sử dụng
-        """
-        if self.num_cities > max_cities:
-            print(f"Bỏ qua thuật toán Ant Colony vì số thành phố ({self.num_cities}) > {max_cities}")
-            self.results["Ant Colony"] = {
-                "path": None,
-                "total_distance": float('inf'),
-                "execution_time": float('inf'),
-                "memory_usage": float('inf')
-            }
-            return None, float('inf'), float('inf'), float('inf')
-        
-        start_memory = self._calculate_memory_usage()
+    def nearest_neighbor(self):
+        """Thuật toán láng giềng gần nhất"""
         start_time = time.time()
+        memory_before = psutil.Process().memory_info().rss / 1024 / 1024
         
-        # Khởi tạo pheromone
-        pheromone = np.ones((self.num_cities, self.num_cities))
-        
-        # Tính toán ma trận visibility (1/khoảng cách)
-        epsilon = 1e-10  # Để tránh chia cho 0
-        visibility = 1 / (self.distance_matrix + epsilon)
-        np.fill_diagonal(visibility, 0)  # Đặt đường chéo bằng 0
-        
-        # Lưu trữ lộ trình tốt nhất
-        best_path = None
+        best_tour = None
         best_distance = float('inf')
         
-        for iteration in range(n_iterations):
-            # Các lộ trình của các kiến trong lần lặp này
-            all_paths = []
-            all_distances = []
+        # Thử với mỗi thành phố làm điểm xuất phát
+        for start_city in range(self.city_count):
+            current_city = start_city
+            tour = [current_city]
+            unvisited = set(range(self.city_count))
+            unvisited.remove(current_city)
             
-            # Cho mỗi con kiến tìm một lộ trình
-            for ant in range(n_ants):
-                current_city = start_city
-                path = [current_city]
-                visited = [False] * self.num_cities
-                visited[current_city] = True
-                tour_length = 0
+            while unvisited:
+                # Tìm thành phố gần nhất chưa thăm
+                next_city = min(unvisited, key=lambda city: self.distance_matrix[current_city][city])
+                tour.append(next_city)
+                unvisited.remove(next_city)
+                current_city = next_city
                 
-                # Xây dựng lộ trình cho con kiến
-                for _ in range(self.num_cities - 1):
-                    # Tính xác suất chọn thành phố tiếp theo
-                    probabilities = np.zeros(self.num_cities)
-                    
-                    for next_city in range(self.num_cities):
-                        if not visited[next_city]:
-                            # P(i,j) = [τ(i,j)]^α * [η(i,j)]^β / Σ [τ(i,k)]^α * [η(i,k)]^β
-                            probabilities[next_city] = (pheromone[current_city][next_city] ** alpha) * \
-                                                      (visibility[current_city][next_city] ** beta)
-                    
-                    # Chuẩn hóa xác suất
-                    sum_prob = np.sum(probabilities)
-                    if sum_prob > 0:
-                        probabilities = probabilities / sum_prob
-                    
-                    # Chọn thành phố tiếp theo dựa trên xác suất
-                    next_city = np.random.choice(range(self.num_cities), p=probabilities)
-                    
-                    # Cập nhật lộ trình
-                    path.append(next_city)
-                    visited[next_city] = True
-                    tour_length += self.distance_matrix[current_city][next_city]
-                    current_city = next_city
+            distance = self.calculate_path_distance(tour)
+            if distance < best_distance:
+                best_distance = distance
+                best_tour = tour
                 
-                # Hoàn thành chu trình bằng cách quay về thành phố ban đầu
-                path.append(start_city)
-                tour_length += self.distance_matrix[current_city][start_city]
-                
-                all_paths.append(path)
-                all_distances.append(tour_length)
-                
-                # Cập nhật lộ trình tốt nhất
-                if tour_length < best_distance:
-                    best_distance = tour_length
-                    best_path = path.copy()
-            
-            # Cập nhật pheromone
-            # Bay hơi pheromone
-            pheromone = (1 - evaporation_rate) * pheromone
-            
-            # Thêm pheromone mới
-            for ant in range(n_ants):
-                path = all_paths[ant]
-                tour_length = all_distances[ant]
-                
-                for i in range(len(path) - 1):
-                    pheromone[path[i]][path[i+1]] += Q / tour_length
-                    pheromone[path[i+1]][path[i]] += Q / tour_length  # Đồ thị vô hướng
+        execution_time = time.time() - start_time
+        memory_used = psutil.Process().memory_info().rss / 1024 / 1024 - memory_before
         
-        end_time = time.time()
-        end_memory = self._calculate_memory_usage()
-        
-        execution_time = end_time - start_time
-        memory_usage = end_memory - start_memory
-        
-        # Chuyển đổi path thành tên thành phố
-        city_path = [self.cities[i] for i in best_path]
-        
-        self.results["Ant Colony"] = {
-            "path": city_path,
-            "total_distance": best_distance,
+        return {
+            "algorithm": "Nearest Neighbor",
+            "path": best_tour,
+            "distance": best_distance,
             "execution_time": execution_time,
-            "memory_usage": memory_usage
+            "memory_used": memory_used
         }
         
-        return city_path, best_distance, execution_time, memory_usage
-    
-    def genetic_algorithm(self, start_city=0, population_size=50, n_generations=100, 
-                      mutation_rate=0.01, max_cities=30):
-        """
-        Thuật toán di truyền (Genetic Algorithm)
-        
-        Parameters:
-        - start_city: Thành phố bắt đầu
-        - population_size: Kích thước quần thể
-        - n_generations: Số thế hệ
-        - mutation_rate: Tỷ lệ đột biến
-        - max_cities: Số thành phố tối đa để chạy thuật toán
-        
-        Returns:
-        - path: Lộ trình thành phố
-        - total_distance: Tổng khoảng cách
-        - execution_time: Thời gian thực thi
-        - memory_usage: Bộ nhớ sử dụng
-        """
-        if self.num_cities > max_cities:
-            print(f"Bỏ qua thuật toán Genetic vì số thành phố ({self.num_cities}) > {max_cities}")
-            self.results["Genetic"] = {
+    def brute_force(self):
+        """Thuật toán brute force (chỉ sử dụng cho n <= 11)"""
+        if self.city_count > 11:
+            return {
+                "algorithm": "Brute Force",
                 "path": None,
-                "total_distance": float('inf'),
-                "execution_time": float('inf'),
-                "memory_usage": float('inf')
+                "distance": None,
+                "execution_time": None,
+                "memory_used": None,
+                "skipped": True
             }
-            return None, float('inf'), float('inf'), float('inf')
-        
-        start_memory = self._calculate_memory_usage()
+            
         start_time = time.time()
+        memory_before = psutil.Process().memory_info().rss / 1024 / 1024
+        
+        # Tạo tất cả hoán vị có thể
+        cities = list(range(1, self.city_count))
+        best_tour = None
+        best_distance = float('inf')
+        
+        for perm in itertools.permutations(cities):
+            # Luôn bắt đầu từ thành phố 0
+            tour = [0] + list(perm)
+            distance = self.calculate_path_distance(tour)
+            
+            if distance < best_distance:
+                best_distance = distance
+                best_tour = tour
+                
+        execution_time = time.time() - start_time
+        memory_used = psutil.Process().memory_info().rss / 1024 / 1024 - memory_before
+        
+        return {
+            "algorithm": "Brute Force",
+            "path": best_tour,
+            "distance": best_distance,
+            "execution_time": execution_time,
+            "memory_used": memory_used
+        }
+    
+    def approximation_algorithm(self):
+        """Thuật toán xấp xỉ 2-approximation sử dụng cây khung nhỏ nhất"""
+        start_time = time.time()
+        memory_before = psutil.Process().memory_info().rss / 1024 / 1024
+        
+        # Khởi tạo graph và MST
+        vertices = list(range(self.city_count))
+        edges = []
+        
+        # Tạo danh sách các cạnh
+        for i in range(self.city_count):
+            for j in range(i+1, self.city_count):
+                edges.append((i, j, self.distance_matrix[i][j]))
+        
+        # Sắp xếp các cạnh theo trọng số tăng dần
+        edges.sort(key=lambda x: x[2])
+        
+        # Thuật toán Kruskal để tạo MST
+        parent = list(range(self.city_count))
+        rank = [0] * self.city_count
+        
+        def find(vertex):
+            if parent[vertex] != vertex:
+                parent[vertex] = find(parent[vertex])
+            return parent[vertex]
+        
+        def union(x, y):
+            root_x = find(x)
+            root_y = find(y)
+            
+            if root_x == root_y:
+                return
+            
+            if rank[root_x] < rank[root_y]:
+                parent[root_x] = root_y
+            else:
+                parent[root_y] = root_x
+                if rank[root_x] == rank[root_y]:
+                    rank[root_x] += 1
+        
+        mst_edges = []
+        for u, v, w in edges:
+            if find(u) != find(v):
+                union(u, v)
+                mst_edges.append((u, v))
+        
+        # Tạo đồ thị từ MST
+        graph = {i: [] for i in range(self.city_count)}
+        for u, v in mst_edges:
+            graph[u].append(v)
+            graph[v].append(u)
+        
+        # DFS để tạo tour
+        visited = [False] * self.city_count
+        tour = []
+        
+        def dfs(vertex):
+            visited[vertex] = True
+            tour.append(vertex)
+            
+            for neighbor in graph[vertex]:
+                if not visited[neighbor]:
+                    dfs(neighbor)
+        
+        dfs(0)  # Bắt đầu từ thành phố 0
+        
+        execution_time = time.time() - start_time
+        memory_used = psutil.Process().memory_info().rss / 1024 / 1024 - memory_before
+        
+        distance = self.calculate_path_distance(tour)
+        return {
+            "algorithm": "Approximation",
+            "path": tour,
+            "distance": distance,
+            "execution_time": execution_time,
+            "memory_used": memory_used
+        }
+    
+    def ant_colony(self, num_ants=10, num_iterations=100, alpha=1.0, beta=2.0, evaporation_rate=0.5, Q=100):
+        """Thuật toán bầy kiến - Ant Colony Optimization"""
+        if self.city_count > 300:
+            return {
+                "algorithm": "Ant Colony",
+                "path": None,
+                "distance": None,
+                "execution_time": None,
+                "memory_used": None,
+                "skipped": True
+            }
+            
+        start_time = time.time()
+        memory_before = psutil.Process().memory_info().rss / 1024 / 1024
+        
+        # Khởi tạo ma trận pheromone
+        pheromone = np.ones((self.city_count, self.city_count)) / self.city_count
+        
+        # Tính ma trận visibility (nghịch đảo của khoảng cách)
+        visibility = np.zeros((self.city_count, self.city_count))
+        for i in range(self.city_count):
+            for j in range(self.city_count):
+                if i != j and self.distance_matrix[i][j] > 0:
+                    visibility[i][j] = 1.0 / self.distance_matrix[i][j]
+        
+        # Lưu tour tốt nhất
+        best_tour = None
+        best_distance = float('inf')
+        
+        for iteration in range(num_iterations):
+            # Mỗi kiến xây dựng một tour
+            all_tours = []
+            all_distances = []
+            
+            for ant in range(num_ants):
+                # Chọn thành phố bắt đầu ngẫu nhiên
+                current_city = random.randint(0, self.city_count - 1)
+                tour = [current_city]
+                unvisited = set(range(self.city_count))
+                unvisited.remove(current_city)
+                
+                # Xây dựng tour đầy đủ
+                while unvisited:
+                    # Tính xác suất chọn thành phố tiếp theo
+                    probabilities = []
+                    total = 0.0
+                    
+                    for city in unvisited:
+                        prob = (pheromone[current_city][city] ** alpha) * (visibility[current_city][city] ** beta)
+                        probabilities.append((city, prob))
+                        total += prob
+                    
+                    # Chuẩn hóa xác suất
+                    if total > 0:
+                        probabilities = [(city, prob/total) for city, prob in probabilities]
+                    else:
+                        # Nếu tất cả đều không có pheromone, chọn ngẫu nhiên
+                        next_city = random.choice(list(unvisited))
+                        tour.append(next_city)
+                        unvisited.remove(next_city)
+                        current_city = next_city
+                        continue
+                        
+                    # Chọn thành phố tiếp theo theo xác suất
+                    r = random.random()
+                    cum_prob = 0.0
+                    for city, prob in probabilities:
+                        cum_prob += prob
+                        if r <= cum_prob:
+                            next_city = city
+                            break
+                    
+                    tour.append(next_city)
+                    unvisited.remove(next_city)
+                    current_city = next_city
+                
+                # Tính khoảng cách tour
+                distance = self.calculate_path_distance(tour)
+                all_tours.append(tour)
+                all_distances.append(distance)
+                
+                # Cập nhật tour tốt nhất
+                if distance < best_distance:
+                    best_distance = distance
+                    best_tour = tour
+            
+            # Cập nhật pheromone
+            pheromone *= (1 - evaporation_rate)  # Bay hơi
+            
+            # Thêm pheromone dựa trên chất lượng các tour
+            for tour, distance in zip(all_tours, all_distances):
+                for i in range(len(tour) - 1):
+                    pheromone[tour[i]][tour[i+1]] += Q / distance
+                    pheromone[tour[i+1]][tour[i]] += Q / distance  # Đối xứng
+                
+                # Thêm pheromone cho cạnh cuối-đầu
+                pheromone[tour[-1]][tour[0]] += Q / distance
+                pheromone[tour[0]][tour[-1]] += Q / distance
+        
+        execution_time = time.time() - start_time
+        memory_used = psutil.Process().memory_info().rss / 1024 / 1024 - memory_before
+        
+        return {
+            "algorithm": "Ant Colony",
+            "path": best_tour,
+            "distance": best_distance,
+            "execution_time": execution_time,
+            "memory_used": memory_used
+        }
+    
+    def genetic_algorithm(self, population_size=50, num_generations=100, mutation_rate=0.01):
+        """Thuật toán di truyền"""
+        if self.city_count > 500:
+            return {
+                "algorithm": "Genetic",
+                "path": None,
+                "distance": None,
+                "execution_time": None,
+                "memory_used": None,
+                "skipped": True
+            }
+            
+        start_time = time.time()
+        memory_before = psutil.Process().memory_info().rss / 1024 / 1024
         
         # Tạo quần thể ban đầu
-        cities = list(range(self.num_cities))
-        cities.remove(start_city)  # Loại bỏ thành phố xuất phát
         population = []
-        
         for _ in range(population_size):
-            # Tạo một lộ trình ngẫu nhiên
-            route = cities.copy()
-            random.shuffle(route)
-            # Thêm thành phố xuất phát vào đầu và cuối
-            route = [start_city] + route + [start_city]
-            population.append(route)
+            # Mỗi cá thể là một tour ngẫu nhiên bắt đầu từ thành phố 0
+            individual = [0] + random.sample(range(1, self.city_count), self.city_count - 1)
+            population.append(individual)
         
-        # Hàm tính độ thích nghi (fitness) - nghịch đảo của tổng khoảng cách
-        def calculate_fitness(route):
-            total_distance = 0
-            for i in range(len(route) - 1):
-                total_distance += self.distance_matrix[route[i]][route[i+1]]
-            return 1 / total_distance
+        def fitness(tour):
+            return 1.0 / self.calculate_path_distance(tour)  # Fitness cao = khoảng cách ngắn
         
-        # Hàm lai ghép
         def crossover(parent1, parent2):
-            # Loại bỏ thành phố đầu và cuối (start_city)
-            p1 = parent1[1:-1]
-            p2 = parent2[1:-1]
+            # Phương pháp Ordered Crossover (OX)
+            size = len(parent1)
+            child = [-1] * size
+            child[0] = 0  # Luôn bắt đầu từ 0
             
-            # Chọn điểm cắt
-            start = random.randint(0, len(p1) - 1)
-            end = random.randint(start, len(p1) - 1)
-            
-            # Lấy đoạn từ parent1
-            child = [-1] * len(p1)
+            # Chọn đoạn từ parent1
+            start, end = sorted(random.sample(range(1, size), 2))
             for i in range(start, end + 1):
-                child[i] = p1[i]
+                child[i] = parent1[i]
             
-            # Điền các thành phố còn lại từ parent2
-            pointer = 0
-            for city in p2:
-                if city not in child:
-                    while pointer < len(child) and child[pointer] != -1:
-                        pointer += 1
-                    if pointer < len(child):
-                        child[pointer] = city
+            # Điền các phần tử còn lại từ parent2
+            j = 1
+            for i in range(1, size):
+                if child[i] == -1:
+                    while parent2[j] in child:
+                        j += 1
+                        if j >= size:
+                            j = 1
+                    child[i] = parent2[j]
+                    j += 1
+                    if j >= size:
+                        j = 1
             
-            # Thêm thành phố xuất phát vào đầu và cuối
-            return [start_city] + child + [start_city]
+            return child
         
-        # Hàm đột biến
-        def mutate(route, mutation_rate):
-            # Loại bỏ thành phố đầu và cuối (start_city)
-            route = route[1:-1]
-            
-            for i in range(len(route)):
-                if random.random() < mutation_rate:
-                    j = random.randint(0, len(route) - 1)
-                    route[i], route[j] = route[j], route[i]
-            
-            # Thêm thành phố xuất phát vào đầu và cuối
-            return [start_city] + route + [start_city]
+        def mutate(tour):
+            # Đảo ngẫu nhiên hai vị trí (không bao gồm thành phố đầu tiên)
+            if random.random() < mutation_rate:
+                i, j = random.sample(range(1, len(tour)), 2)
+                tour[i], tour[j] = tour[j], tour[i]
+            return tour
         
-        # Thuật toán di truyền chính
-        best_route = None
-        best_fitness = 0
+        best_tour = None
+        best_distance = float('inf')
         
-        for generation in range(n_generations):
-            # Tính độ thích nghi cho mỗi cá thể
-            fitness_scores = [calculate_fitness(route) for route in population]
+        for generation in range(num_generations):
+            # Đánh giá quần thể
+            fitness_scores = [fitness(ind) for ind in population]
             total_fitness = sum(fitness_scores)
             
-            # Tìm cá thể tốt nhất trong thế hệ hiện tại
-            best_idx = fitness_scores.index(max(fitness_scores))
-            if fitness_scores[best_idx] > best_fitness:
-                best_fitness = fitness_scores[best_idx]
-                best_route = population[best_idx]
+            # Chọn cá thể để sinh sản (selection)
+            selected = []
+            for _ in range(population_size):
+                r = random.uniform(0, total_fitness)
+                cum_sum = 0
+                for i, fit in enumerate(fitness_scores):
+                    cum_sum += fit
+                    if cum_sum >= r:
+                        selected.append(copy.deepcopy(population[i]))
+                        break
             
-            # Chọn các cá thể để lai ghép
-            selected_indices = random.choices(
-                range(population_size), 
-                weights=fitness_scores, 
-                k=population_size
-            )
-            selected = [population[i] for i in selected_indices]
-            
-            # Tạo thế hệ mới
+            # Tạo thế hệ mới thông qua lai ghép và đột biến
             new_population = []
-            
-            # Ưu tú hóa: giữ lại cá thể tốt nhất
-            new_population.append(population[best_idx])
-            
-            # Lai ghép và đột biến
-            for i in range(1, population_size):
+            while len(new_population) < population_size:
                 # Chọn cha mẹ
-                parent1 = random.choice(selected)
-                parent2 = random.choice(selected)
+                parent1, parent2 = random.sample(selected, 2)
                 
                 # Lai ghép
                 child = crossover(parent1, parent2)
                 
                 # Đột biến
-                child = mutate(child, mutation_rate)
+                child = mutate(child)
                 
                 new_population.append(child)
             
             # Cập nhật quần thể
             population = new_population
+            
+            # Tìm tour tốt nhất trong thế hệ hiện tại
+            for tour in population:
+                distance = self.calculate_path_distance(tour)
+                if distance < best_distance:
+                    best_distance = distance
+                    best_tour = tour
         
-        # Tính tổng khoảng cách của lộ trình tốt nhất
-        best_distance = 0
-        for i in range(len(best_route) - 1):
-            best_distance += self.distance_matrix[best_route[i]][best_route[i+1]]
+        execution_time = time.time() - start_time
+        memory_used = psutil.Process().memory_info().rss / 1024 / 1024 - memory_before
         
-        end_time = time.time()
-        end_memory = self._calculate_memory_usage()
-        
-        execution_time = end_time - start_time
-        memory_usage = end_memory - start_memory
-        
-        # Chuyển đổi path thành tên thành phố
-        city_path = [self.cities[i] for i in best_route]
-        
-        self.results["Genetic"] = {
-            "path": city_path,
-            "total_distance": best_distance,
+        return {
+            "algorithm": "Genetic",
+            "path": best_tour,
+            "distance": best_distance,
             "execution_time": execution_time,
-            "memory_usage": memory_usage
+            "memory_used": memory_used
         }
-        
-        return city_path, best_distance, execution_time, memory_usage
-    
-    def nearest_neighbor(self, start_city=0):
-        """
-        Thuật toán láng giềng gần nhất (Nearest Neighbor)
-        
-        Parameters:
-        - start_city: Thành phố bắt đầu
-        
-        Returns:
-        - path: Lộ trình thành phố
-        - total_distance: Tổng khoảng cách
-        - execution_time: Thời gian thực thi
-        - memory_usage: Bộ nhớ sử dụng
-        """
-        start_memory = self._calculate_memory_usage()
-        start_time = time.time()
-        
-        path = [start_city]
-        unvisited = set(range(self.num_cities))
-        unvisited.remove(start_city)
-        current_city = start_city
-        total_distance = 0
-        
-        while unvisited:
-            # Tìm thành phố gần nhất chưa thăm
-            nearest_city = min(unvisited, key=lambda city: self.distance_matrix[current_city][city])
-            path.append(nearest_city)
-            total_distance += self.distance_matrix[current_city][nearest_city]
-            unvisited.remove(nearest_city)
-            current_city = nearest_city
-        
-        # Quay về thành phố ban đầu
-        path.append(start_city)
-        total_distance += self.distance_matrix[current_city][start_city]
-        
-        end_time = time.time()
-        end_memory = self._calculate_memory_usage()
-        
-        execution_time = end_time - start_time
-        memory_usage = end_memory - start_memory
-        
-        # Chuyển đổi path thành tên thành phố
-        city_path = [self.cities[i] for i in path]
-        
-        self.results["Nearest Neighbor"] = {
-            "path": city_path,
-            "total_distance": total_distance,
-            "execution_time": execution_time,
-            "memory_usage": memory_usage
-        }
-        
-        return city_path, total_distance, execution_time, memory_usage
-    
-    def visualize_results(self):
-        """Trực quan hóa kết quả của các thuật toán"""
-        if not self.results:
-            print("Không có kết quả để trực quan hóa.")
-            return
-        
-        # Chuẩn bị dữ liệu
-        algorithms = []
-        execution_times = []
-        memory_usages = []
-        distances = []
-        
-        for algo, result in self.results.items():
-            if result["total_distance"] != float('inf'):
-                algorithms.append(algo)
-                execution_times.append(result["execution_time"])
-                memory_usages.append(result["memory_usage"])
-                distances.append(result["total_distance"])
-        
-        # Tạo bảng kết quả
-        results_df = pd.DataFrame({
-            'Thuật toán': algorithms,
-            'Thời gian thực thi (s)': execution_times,
-            'Bộ nhớ sử dụng (MB)': memory_usages,
-            'Tổng khoảng cách': distances
-        })
-        
-        print("Bảng kết quả:")
-        print(results_df)
-        
-        # Vẽ biểu đồ thời gian thực thi
-        plt.figure(figsize=(12, 6))
-        
-        plt.subplot(1, 3, 1)
-        plt.bar(algorithms, execution_times, color='blue')
-        plt.title('Thời gian thực thi')
-        plt.ylabel('Thời gian (giây)')
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        
-        # Vẽ biểu đồ bộ nhớ sử dụng
-        plt.subplot(1, 3, 2)
-        plt.bar(algorithms, memory_usages, color='green')
-        plt.title('Bộ nhớ sử dụng')
-        plt.ylabel('Bộ nhớ (MB)')
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        
-        # Vẽ biểu đồ tổng khoảng cách
-        plt.subplot(1, 3, 3)
-        plt.bar(algorithms, distances, color='red')
-        plt.title('Tổng khoảng cách')
-        plt.ylabel('Khoảng cách')
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        
-        plt.savefig('tsp_results.png')
-        print("Đã lưu biểu đồ kết quả vào file 'tsp_results.png'")
-        plt.show()
 
-def main(file_path="city.tsp"):
-    # Đọc file TSP
-    tsp_solver = TSPSolver.read_tsp_file(file_path)
+def run_experiments(file_path, n_values=None):
+    """Chạy các thuật toán với các giá trị n khác nhau"""
+    if n_values is None:
+        n_values = [10, 20, 50, 150, 300, 1000, 10000]
     
-    if tsp_solver is None:
-        print("Không thể đọc file TSP.")
+    all_results = {}
+    
+    for n in n_values:
+        print(f"\nRunning experiments for n = {n}")
+        
+        if n <= 10:
+            # Sử dụng ma trận khoảng cách từ file
+            distance_matrix, city_count = TSPSolver.read_tsp_file(file_path)
+        else:
+            # Tạo ma trận khoảng cách ngẫu nhiên cho n > 10
+            distance_matrix = np.random.randint(1, 100, size=(n, n))
+            np.fill_diagonal(distance_matrix, 0)  # Khoảng cách từ thành phố tới chính nó = 0
+            distance_matrix = (distance_matrix + distance_matrix.T) // 2  # Đảm bảo tính đối xứng
+            city_count = n
+            
+        solver = TSPSolver(distance_matrix, city_count)
+        
+        algorithms = [
+            ("Greedy", solver.greedy_algorithm),
+            ("Brute Force", solver.brute_force),
+            ("Approximation", solver.approximation_algorithm),
+            ("Ant Colony", solver.ant_colony),
+            ("Genetic", solver.genetic_algorithm),
+            ("Nearest Neighbor", solver.nearest_neighbor)
+        ]
+        
+        results = []
+        
+        for name, algorithm in algorithms:
+            print(f"Running {name} algorithm...")
+            
+            try:
+                result = algorithm()
+                results.append(result)
+                
+                if result.get("skipped"):
+                    print(f"{name} algorithm was skipped (n = {n} too large)")
+                else:
+                    print(f"{name} algorithm completed in {result['execution_time']:.6f} seconds")
+                    print(f"Path: {result['path']}")
+                    print(f"Distance: {result['distance']}")
+                    print(f"Memory used: {result['memory_used']:.6f} MB")
+            except Exception as e:
+                print(f"Error running {name} algorithm: {str(e)}")
+                results.append({
+                    "algorithm": name,
+                    "path": None,
+                    "distance": None,
+                    "execution_time": None,
+                    "memory_used": None,
+                    "error": str(e)
+                })
+        
+        all_results[n] = results
+        
+        # Visualize results for this n
+        visualize_performance(results, n)
+    
+    return all_results
+
+def visualize_performance(results, n):
+    """Trực quan hóa hiệu suất của các thuật toán"""
+    # Lọc các kết quả có dữ liệu đầy đủ
+    valid_results = [r for r in results if r.get("execution_time") is not None and not r.get("skipped")]
+    
+    if not valid_results:
+        print(f"No valid results to visualize for n = {n}")
         return
     
-    print(f"Đã đọc file TSP với {tsp_solver.num_cities} thành phố.")
+    algorithms = [r["algorithm"] for r in valid_results]
+    execution_times = [r["execution_time"] for r in valid_results]
+    memory_used = [r["memory_used"] for r in valid_results]
     
-    # Thực hiện các thuật toán
-    print("\n1. Thuật toán tham lam (Greedy):")
-    path, total_distance, execution_time, memory_usage = tsp_solver.greedy_algorithm()
-    print(f"Lộ trình: {path}")
-    print(f"Tổng khoảng cách: {total_distance}")
-    print(f"Thời gian thực thi: {execution_time} giây")
-    print(f"Bộ nhớ sử dụng: {memory_usage} MB")
+    fig, ax1 = plt.subplots(figsize=(12, 6))
     
-    print("\n2. Thuật toán vét cạn (Brute Force):")
-    path, total_distance, execution_time, memory_usage = tsp_solver.brute_force(max_cities=10)
-    if path:
-        print(f"Lộ trình: {path}")
-        print(f"Tổng khoảng cách: {total_distance}")
-        print(f"Thời gian thực thi: {execution_time} giây")
-        print(f"Bộ nhớ sử dụng: {memory_usage} MB")
+    # Đồ thị cột cho thời gian thực thi
+    x = np.arange(len(algorithms))
+    width = 0.35
+    rects = ax1.bar(x, execution_times, width, label='Execution Time (s)', color='skyblue')
+    ax1.set_ylabel('Execution Time (seconds)', color='blue')
+    ax1.set_xlabel('Algorithm')
+    ax1.set_title(f'Algorithm Performance Comparison (n = {n})')
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(algorithms, rotation=45, ha='right')
+    ax1.tick_params(axis='y', labelcolor='blue')
     
-    print("\n3. Thuật toán xấp xỉ (Approximation):")
-    path, total_distance, execution_time, memory_usage = tsp_solver.approximation_algorithm()
-    print(f"Lộ trình: {path}")
-    print(f"Tổng khoảng cách: {total_distance}")
-    print(f"Thời gian thực thi: {execution_time} giây")
-    print(f"Bộ nhớ sử dụng: {memory_usage} MB")
+    # Đồ thị đường cho bộ nhớ sử dụng
+    ax2 = ax1.twinx()
+    ax2.plot(x, memory_used, 'ro-', linewidth=2, markersize=8, label='Memory Used (MB)')
+    ax2.set_ylabel('Memory Used (MB)', color='red')
+    ax2.tick_params(axis='y', labelcolor='red')
     
-    print("\n4. Thuật toán bầy kiến (Ant Colony):")
-    path, total_distance, execution_time, memory_usage = tsp_solver.ant_colony_optimization(max_cities=30)
-    if path:
-        print(f"Lộ trình: {path}")
-        print(f"Tổng khoảng cách: {total_distance}")
-        print(f"Thời gian thực thi: {execution_time} giây")
-        print(f"Bộ nhớ sử dụng: {memory_usage} MB")
+    # Thêm nhãn dữ liệu
+    for i, v in enumerate(execution_times):
+        ax1.text(i, v + 0.01, f'{v:.3f}s', ha='center', va='bottom', color='blue', fontweight='bold')
     
-    print("\n5. Thuật toán di truyền (Genetic):")
-    path, total_distance, execution_time, memory_usage = tsp_solver.genetic_algorithm(max_cities=30)
-    if path:
-        print(f"Lộ trình: {path}")
-        print(f"Tổng khoảng cách: {total_distance}")
-        print(f"Thời gian thực thi: {execution_time} giây")
-        print(f"Bộ nhớ sử dụng: {memory_usage} MB")
+    for i, v in enumerate(memory_used):
+        ax2.text(i, v + 0.05, f'{v:.2f}MB', ha='center', va='bottom', color='red', fontweight='bold')
     
-    print("\n6. Thuật toán láng giềng gần nhất (Nearest Neighbor):")
-    path, total_distance, execution_time, memory_usage = tsp_solver.nearest_neighbor()
-    print(f"Lộ trình: {path}")
-    print(f"Tổng khoảng cách: {total_distance}")
-    print(f"Thời gian thực thi: {execution_time} giây")
-    print(f"Bộ nhớ sử dụng: {memory_usage} MB")
+    # Thêm legend
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
     
-    # Trực quan hóa kết quả
-    print("\nTrực quan hóa kết quả:")
-    tsp_solver.visualize_results()
+    plt.tight_layout()
+    plt.savefig(f'tsp_performance_n{n}.png')
+    plt.close()
+    
+    # Trực quan hóa khoảng cách tìm được
+    if all(r.get("distance") is not None for r in valid_results):
+        distances = [r["distance"] for r in valid_results]
+        
+        plt.figure(figsize=(10, 6))
+        plt.bar(algorithms, distances, color='green')
+        plt.ylabel('Total Distance')
+        plt.xlabel('Algorithm')
+        plt.title(f'Total Distance Comparison (n = {n})')
+        plt.xticks(rotation=45, ha='right')
+        
+        # Thêm nhãn dữ liệu
+        for i, v in enumerate(distances):
+            plt.text(i, v + 0.5, f'{v:.1f}', ha='center', va='bottom', color='black')
+        
+        plt.tight_layout()
+        plt.savefig(f'tsp_distance_n{n}.png')
+        plt.close()
+
+def main():
+    file_path = "city.tsp"
+    
+    # Chạy với n nhỏ để thử nghiệm
+    n_values_to_test = [10, 20, 50, 150, 500, 1000, 10000]  # Có thể thêm các giá trị lớn hơn tùy theo khả năng máy tính
+    
+    # Chạy thử nghiệm
+    results = run_experiments(file_path, n_values_to_test)
+    
+    print("\n===== Kết quả tóm tắt =====")
+    for n, n_results in results.items():
+        print(f"\nKết quả cho n = {n}:")
+        for result in n_results:
+            if result.get("skipped"):
+                print(f"  {result['algorithm']}: Bỏ qua (n quá lớn)")
+            elif result.get("error"):
+                print(f"  {result['algorithm']}: Lỗi - {result['error']}")
+            else:
+                print(f"  {result['algorithm']}: Khoảng cách = {result['distance']}, Thời gian = {result['execution_time']:.6f}s, Bộ nhớ = {result['memory_used']:.2f}MB")
 
 if __name__ == "__main__":
-    main("city.tsp")
+    main()
